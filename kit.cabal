@@ -5,7 +5,6 @@ license:         NONE
 author:          Br3akp01nt
 maintainer:      br3akp01nt@protonmail.com
 build-type:      Simple
-extra-doc-files: CHANGELOG.md
 
 common warnings
     ghc-options: -Wall
