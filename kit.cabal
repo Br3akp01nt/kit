@@ -1,4 +1,4 @@
-cabal-version:   3.4
+cabal-version:   3.14
 name:            kit
 version:         0.1.0.0
 license:         NONE
@@ -13,7 +13,7 @@ common warnings
 executable cli
     import:           warnings
     main-is:          Main.hs
-    build-depends:    base ^>=4.20.0.0,
+    build-depends:    base,
                       kit:lib,
                       extra,
                       text,
@@ -50,7 +50,7 @@ executable cli
 
 library lib
     import:           warnings
-    build-depends:    base ^>=4.20.0.0,
+    build-depends:    base,
                       extra,
                       text,
                       directory,
