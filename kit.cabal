@@ -1,0 +1,107 @@
+cabal-version:   3.4
+name:            kit
+version:         0.1.0.0
+license:         NONE
+author:          Br3akp01nt
+maintainer:      br3akp01nt@protonmail.com
+build-type:      Simple
+extra-doc-files: CHANGELOG.md
+
+common warnings
+    ghc-options: -Wall
+
+executable cli
+    import:           warnings
+    main-is:          Main.hs
+    build-depends:    base ^>=4.20.0.0,
+                      kit:lib,
+                      extra,
+                      text,
+                      directory,
+                      containers,
+                      optparse-applicative,
+                      transformers,
+                      mtl,
+                      filepath,
+                      process-extras,
+                      exceptions,
+                      regex-pcre-builtin,
+                      relude,
+                      parsec,
+                      free,
+                      composition
+    mixins:           base hiding (Prelude),
+                      relude (Relude as Prelude),
+                      relude
+    hs-source-dirs:   src/app
+    default-language: Haskell2010
+    other-modules:    Actions.Grep,
+                      Actions.Branch,
+                      Actions.Shove,
+                      Actions.NewBranch,
+                      ExternalCommands,
+                      External.Git,
+                      External.Git.Commands,
+                      External.Git.Grep,
+                      External.Git.Internal,
+                      External.Git.Parsec,
+                      UI.Selection,
+                      KitM
+
+library lib
+    import:           warnings
+    build-depends:    base ^>=4.20.0.0,
+                      extra,
+                      text,
+                      directory,
+                      containers,
+                      optparse-applicative,
+                      transformers,
+                      mtl,
+                      filepath,
+                      process-extras,
+                      exceptions,
+                      relude,
+                      composition,
+                      parsec,
+                      natural-transformation
+    mixins:           base hiding (Prelude),
+                      relude (Relude as Prelude),
+                      relude
+    hs-source-dirs:   src/lib
+    default-language: Haskell2010
+    exposed-modules:  Control.Monad.Logger,
+                      Control.Monad.Log.Class,
+                      Data.List.Index,
+                      Data.List.Monoid,
+                      Data.List.NonEmpty.Ord,
+                      Data.List.NonEmpty.Index,
+                      Data.Map.List,
+                      Data.Text.IO.Class,
+                      Data.Text.Split,
+                      Data.Tree.Merge,
+                      Data.Tree.Text,
+                      System.OsPath.Text,
+                      Text.Format.Justify,
+                      Text.Format.Pad,
+                      Text.Parsec.Control,
+                      Text.Parsec.Trans.Natural,
+                      Data.Function.Suffix
+
+test-suite kit-tests
+  type:           exitcode-stdio-1.0
+  main-is:        Main.hs
+  hs-source-dirs: test
+  mixins:         base hiding (Prelude),
+                  relude (Relude as Prelude),
+                  relude
+  build-depends:  base,
+                  kit:lib,
+                  containers,
+                  QuickCheck,
+                  relude
+  other-modules:  Data.Tree.TextTests,
+                  Data.Tree.MergeTests,
+                  Test.QuickCheck.Subject,
+                  Test.QuickCheck.Arbitrary.NonEmpty
+
