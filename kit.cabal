@@ -1,7 +1,8 @@
 cabal-version:   3.14
 name:            kit
 version:         0.1.0.0
-license:         NONE
+license:         BSD-3-Clause
+license-file:    LICENSE
 author:          Br3akp01nt
 maintainer:      br3akp01nt@protonmail.com
 build-type:      Simple
