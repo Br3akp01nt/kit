@@ -81,6 +81,7 @@ library lib
                       Data.Text.Split,
                       Data.Tree.Merge,
                       Data.Tree.Text,
+                      Domain.Commit.Specification,
                       System.OsPath.Text,
                       Text.Format.Justify,
                       Text.Format.Pad,
@@ -102,6 +103,5 @@ test-suite kit-tests
                   relude
   other-modules:  Data.Tree.TextTests,
                   Data.Tree.MergeTests,
-                  Test.QuickCheck.Subject,
-                  Test.QuickCheck.Arbitrary.NonEmpty
+                  Test.QuickCheck.Subject
 

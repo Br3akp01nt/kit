@@ -12,7 +12,6 @@ import           Debug.Trace                        (traceWith)
 import           Relude.Extra                       (Foldable1 (maximum1))
 import           Test.QuickCheck                    (Property, quickCheck,
                                                      (===))
-import           Test.QuickCheck.Arbitrary.NonEmpty
 import           Test.QuickCheck.Test               (test)
 
 

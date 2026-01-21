@@ -1,6 +1,6 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
 
 module Actions.Shove where
 import           Control.Monad.Error.Class (MonadError)
@@ -10,32 +10,44 @@ import           External.Git.Commands     (add, commit, currentBranch, push)
 import           Text.Regex.PCRE           ((=~~))
 import qualified Text.Regex.PCRE.Text      ()
 import Data.Function.Suffix ((£))
+import Domain.Commit.Specification (CommitSpec, CommitType, renderMsg)
+import qualified Domain.Commit.Specification as S
 
 data ShoveOptions = ShoveOptions
-    { message  :: Maybe Text
-    , autoPush :: Bool
-    , specific :: Bool
+    { specification :: CommitOptions
+    , autoPush      :: Bool
+    , specific      :: Bool
+    }
+
+data CommitOptions = CommitOptions
+    { commitType  :: CommitType
+    , description :: Maybe Text
     }
 
 shove :: forall m. (MonadIO m, MonadError Text m) => ShoveOptions -> m ()
 shove opts = do
     add £ when $ not (specific opts)
-    commit =<< getMsg =<< collectPrefix
+    commit . renderMsg =<< (specify <$> collectPrefix <*> getDesc)
     push £ when $ autoPush opts
   where
     collectPrefix :: m (Maybe Text)
-    collectPrefix = runMaybeT $ do
+    collectPrefix = do
         n <- branchName <$> currentBranch
-        ticketId <- hoistMaybe $ n =~~ ("BLIK-\\d+" :: String)
-        pure $ ticketId <> " | "
+        pure $ n =~~ ("\\w+-\\d+" :: Text)
 
-    getMsg :: Maybe Text -> m Text
-    getMsg prfx = do
-        msg <- askUser £ whenNothing $ message opts
-        pure $ fromMaybe "" prfx <> msg
+    getDesc :: m Text
+    getDesc = do
+        askUser £ whenNothing $ description $ specification opts
       where
         askUser :: m Text
-        askUser = do
-            T.putStr $ "Commit message: " <> fromMaybe "" prfx
-            getLine
+        askUser = T.putStr "Description: " *> getLine
+
+    specify :: Maybe Text -> Text -> CommitSpec
+    specify i d = S.CommitSpec
+        { S.issue = i
+        , S.flags = mempty
+        , S.scope = mempty
+        , S.description = d
+        , S.commitType = commitType $ specification opts
+        }
 
