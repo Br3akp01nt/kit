@@ -17,6 +17,7 @@ import           Options.Applicative  (command, execParser, helper, info,
 import qualified Options.Applicative  as O
 import           Text.Regex.PCRE      (Regex, RegexMaker (makeRegex))
 import qualified Domain.Commit.Specification as D
+import qualified Data.Set as Set
 
 type Command = O.ParserInfo (IO ())
 
@@ -164,26 +165,46 @@ shove = (runShove <$> parser) `info` O.progDesc "git commit wrapper"
         = command (T.unpack $ D.displayType t)
         $ (O.helper <*> opts t) `info` O.progDesc ""
 
-    opts t = Shove.ShoveOptions <$> spec t
+    opts t = Shove.ShoveOptions <$> spec
                                 <*> autoPush
                                 <*> specific
-
-    spec t = Shove.CommitOptions t <$> desc
       where
-        desc = O.optional $ O.strArgument $ mconcat
-          [ O.metavar "message"
-          , O.help "Commit message"
+        spec =
+            Shove.CommitOptions <$> pure t
+                                <*> desc
+                                <*> flags
+          where
+            desc = O.optional $ O.strArgument $ mconcat
+              [ O.metavar "message"
+              , O.help "Commit message"
+              ]
+
+            flags =
+                (\a b -> Set.fromList $ catMaybes [a, b])
+                  <$> breaking
+                  <*> inProgress
+              where
+                breaking = O.optional $ O.flag' D.Breaking $ mconcat
+                  [ O.help "Marks the commit as a breaking change"
+                  , O.short 'b'
+                  , O.long "breaking"
+                  ]
+
+                inProgress = O.optional $ O.flag' D.InProgress $ mconcat
+                  [ O.help "Marks the commit as a breaking change"
+                  , O.short 'w'
+                  , O.long "wip"
+                  ]
+
+        autoPush = O.flag False True $ mconcat
+          [ O.short 'p'
+          , O.long "push"
           ]
 
-    autoPush = O.flag False True $ mconcat
-      [ O.short 'p'
-      , O.long "push"
-      ]
-
-    specific = O.flag False True $ mconcat
-      [ O.short 's'
-      , O.long "specific"
-      ]
+        specific = O.flag False True $ mconcat
+          [ O.short 's'
+          , O.long "specific"
+          ]
 
 
 new :: Command

@@ -10,7 +10,7 @@ import           External.Git.Commands     (add, commit, currentBranch, push)
 import           Text.Regex.PCRE           ((=~~))
 import qualified Text.Regex.PCRE.Text      ()
 import Data.Function.Suffix ((£))
-import Domain.Commit.Specification (CommitSpec, CommitType, renderMsg)
+import Domain.Commit.Specification (CommitSpec, CommitType, renderMsg, CommitFlag)
 import qualified Domain.Commit.Specification as S
 
 data ShoveOptions = ShoveOptions
@@ -22,6 +22,7 @@ data ShoveOptions = ShoveOptions
 data CommitOptions = CommitOptions
     { commitType  :: CommitType
     , description :: Maybe Text
+    , flags       :: Set CommitFlag
     }
 
 shove :: forall m. (MonadIO m, MonadError Text m) => ShoveOptions -> m ()
@@ -45,7 +46,7 @@ shove opts = do
     specify :: Maybe Text -> Text -> CommitSpec
     specify i d = S.CommitSpec
         { S.issue = i
-        , S.flags = mempty
+        , S.flags = flags $ specification opts
         , S.scope = mempty
         , S.description = d
         , S.commitType = commitType $ specification opts

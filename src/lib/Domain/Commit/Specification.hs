@@ -41,20 +41,23 @@ displayType t =
 
 data CommitFlag
     = Breaking
+    | InProgress
   deriving (Eq, Ord)
 
 displayFlag :: CommitFlag -> Text
 displayFlag f =
     case f of
       Breaking -> "!"
+      InProgress -> "~"
 
 renderMsg :: CommitSpec -> Text
 renderMsg spec = execWriter $ do
     whenJust (issue spec) $ \i -> do
         tell $ i <> " | "
-    tell $ displayType (commitType spec) <> ": "
+    tell $ displayType (commitType spec)
+    tell $ T.concat . map displayFlag $ toList $ flags spec
+    tell ": "
     whenJust (scope spec) $ \s -> do
         tell $ "(" <> s <> ")"
-    tell $ T.concat . map displayFlag $ toList $ flags spec
     tell $ description spec
 
