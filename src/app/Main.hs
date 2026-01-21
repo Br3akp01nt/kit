@@ -7,6 +7,7 @@ import qualified Actions.NewBranch   as NewBranch
 import qualified Actions.Shove       as Shove
 import           Control.Monad.Logger (runLoggerT)
 import qualified Data.String          as S
+import qualified Data.Text            as T
 import qualified Data.Text.IO.Class   as T
 import qualified External.Git.Grep    as Grep (CaseSensitivity (..))
 import           KitM                 (runKitM)
@@ -15,6 +16,7 @@ import           Options.Applicative  (command, execParser, helper, info,
                                        subparser)
 import qualified Options.Applicative  as O
 import           Text.Regex.PCRE      (Regex, RegexMaker (makeRegex))
+import qualified Domain.Commit.Specification as D
 
 type Command = O.ParserInfo (IO ())
 
@@ -149,16 +151,29 @@ shove = (runShove <$> parser) `info` O.progDesc "git commit wrapper"
     runShove cmdOpts = runKitM (Shove.shove cmdOpts) print
 
     parser :: O.Parser Shove.ShoveOptions
-    parser = O.helper <*> opts
+    parser
+        = (O.helper <*>)
+        $ subparser
+        $ mconcat
+        $ map shoveCommand
+            [ D.Feature, D.Fix, D.Refactor, D.Performance, D.Style, D.Test
+            , D.Documentation, D.Build, D.Operations, D.Chore
+            ]
 
-    opts = Shove.ShoveOptions <$> message
-                              <*> autoPush
-                              <*> specific
+    shoveCommand t
+        = command (T.unpack $ D.displayType t)
+        $ (O.helper <*> opts t) `info` O.progDesc ""
 
-    message = O.optional $ O.strArgument $ mconcat
-      [ O.metavar "message"
-      , O.help "Commit message"
-      ]
+    opts t = Shove.ShoveOptions <$> spec t
+                                <*> autoPush
+                                <*> specific
+
+    spec t = Shove.CommitOptions t <$> desc
+      where
+        desc = O.optional $ O.strArgument $ mconcat
+          [ O.metavar "message"
+          , O.help "Commit message"
+          ]
 
     autoPush = O.flag False True $ mconcat
       [ O.short 'p'
