@@ -12,6 +12,7 @@ import qualified Text.Regex.PCRE.Text      ()
 import Data.Function.Suffix ((£))
 import Domain.Commit.Specification (CommitSpec, CommitType, renderMsg, CommitFlag)
 import qualified Domain.Commit.Specification as S
+import Data.Text (toUpper)
 
 data ShoveOptions = ShoveOptions
     { specification :: CommitOptions
@@ -34,7 +35,7 @@ shove opts = do
     collectPrefix :: m (Maybe Text)
     collectPrefix = do
         n <- branchName <$> currentBranch
-        pure $ n =~~ ("\\w+-\\d+" :: Text)
+        pure $ toUpper <$> n =~~ ("\\w+-\\d+" :: Text)
 
     getDesc :: m Text
     getDesc = do
