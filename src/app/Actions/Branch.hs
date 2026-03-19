@@ -117,20 +117,19 @@ executeAction action target branches =
           Git.delete target
 
 
-      (Delete deletionMode, Local localBranch) ->
-          void $ runMaybeT $ do
-                Git.delete target
-                case deletionMode of
-                    DeleteLocal
-                      -> pure ()
+      (Delete deletionMode, Local localBranch) -> do
+          Git.delete target
+          case deletionMode of
+              DeleteLocal
+                -> pure ()
 
-                    DeleteIncludingTracking
-                      -> deleteRemoteTrackOf localBranch
+              DeleteIncludingTracking
+                -> deleteRemoteTrackOf localBranch
 
         where
 
-          deleteRemoteTrackOf :: LocalBranch -> MaybeT m ()
-          deleteRemoteTrackOf b = do
+          deleteRemoteTrackOf :: LocalBranch -> m ()
+          deleteRemoteTrackOf b = void $ runMaybeT $ do
               localRemote <- hoistMaybe $ do
                   track <- remoteTrack b
                   find ((G.rtIdentifier track ==) . branchId) branches
