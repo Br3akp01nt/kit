@@ -64,16 +64,13 @@ switchRemote r locals = do
       Just b  -> switch b
 
 delete :: (MonadIO m, MonadError Text m) => Branch -> m ()
-delete = cmd >>> output >=> T.putStrLn
+delete (Local (LocalBranch _ n _)) = output cmd >>= T.putStrLn
   where
-    cmd b = git "branch" $ opts b <> [arg b]
-      where
-        opts (Local _)  = ["-d"]
-        opts (RemoteTracking _) = ["-d", "-r"]
-
-        arg (Local (LocalBranch _ n _)) = T.unpack n
-        arg (RemoteTracking (RemoteBranch n r)) =
-            intercalate "/" $ T.unpack <$> [r, n]
+    cmd = git "branch" ["-d", T.unpack n]
+delete (RemoteTracking (RemoteBranch n r))
+    = output cmd >>= T.putStrLn
+  where
+    cmd = git "push" [T.unpack r, "--delete", T.unpack n]
 
 
 repoName :: (MonadIO m, MonadError Text m, MonadThrow m) => m Text

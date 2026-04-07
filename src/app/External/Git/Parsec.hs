@@ -45,7 +45,7 @@ branch = P.choice $ P.try <$> [ G.RemoteTracking <$> remoteBranch <?> "remote br
             spaces_
             ti <- P.optionMaybe $ P.try $ trackInfo
             case ti of
-                Nothing -> pure Nothing
+                Nothing -> pure $ Just $ G.RemoteTrack rId $ G.Divergence 0 0
                 Just Gone -> pure Nothing
                 Just (Divergence d) -> pure $ Just $ G.RemoteTrack rId d
         spaces_

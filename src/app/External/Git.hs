@@ -33,6 +33,7 @@ class IsBranch a where
 
 data Branch = Local LocalBranch
             | RemoteTracking RemoteBranch
+    deriving (Show)
 
 asLocal :: Branch -> Maybe LocalBranch
 asLocal (Local b) = Just b

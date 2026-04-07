@@ -22,7 +22,7 @@ import qualified Data.Text.IO.Class        as T
 import           External.Git              (Branch (..), BranchName,
                                             IsBranch (branchId, branchName),
                                             LocalBranch (..), RemoteBranch (..),
-                                            asLocal, isLocal, showBranchId)
+                                            asLocal, isLocal, showBranchId, RemoteTrack (..))
 import           External.Git.Commands     (RemoteInclusion (WithRemotes))
 import qualified External.Git.Commands     as Git
 import qualified External.Git              as G
@@ -38,13 +38,9 @@ data BranchOptions = BranchOptions
 
 
 data BranchAction
-    = Switch
-    | Rename BranchName
-    | Delete DeletionMode
-
-data DeletionMode
-  = DeleteLocal
-  | DeleteIncludingTracking
+    = Switch Branch
+    | Rename LocalBranch BranchName
+    | Delete Branch
 
 
 displayName :: Branch -> Text
@@ -67,7 +63,7 @@ branch opts = void $ runMaybeT $ do
 
     chosenAction <- decideAction chosenBranch
 
-    executeAction chosenAction chosenBranch branches
+    runReaderT (executeAction chosenAction) branches
 
   where
 
@@ -95,51 +91,46 @@ branch opts = void $ runMaybeT $ do
 executeAction :: forall m
                . (MonadIO m, MonadError Text m)
               => BranchAction
-              -> Branch
-              -> [Branch]
-              -> m ()
-executeAction action target branches =
-    case (action, target) of
-      (Switch, Local targetBranch) ->
+              -> ReaderT [Branch] m ()
+executeAction action =
+    case action of
+      (Switch (Local targetBranch)) ->
           Git.switch targetBranch
 
-
-      (Switch, RemoteTracking targetBranch) ->
+      (Switch (RemoteTracking targetBranch)) -> do
+          branches <- ask
           Git.switchRemote targetBranch
-          $ Map.fromList
-          $ flip mapMaybe branches $ \b -> do
-              loc <- asLocal b
-              track <- remoteTrack loc
-              pure (G.rtIdentifier track, loc)
+            $ Map.fromList
+            $ flip mapMaybe branches $ \b -> do
+                loc <- asLocal b
+                track <- remoteTrack loc
+                pure (G.rtIdentifier track, loc)
 
-
-      (Delete _, RemoteTracking _) ->
-          Git.delete target
-
-
-      (Delete deletionMode, Local localBranch) -> do
-          Git.delete target
-          case deletionMode of
-              DeleteLocal
-                -> pure ()
-
-              DeleteIncludingTracking
-                -> deleteRemoteTrackOf localBranch
+      (Delete b) -> void $ runMaybeT $ do
+          Git.delete b
+          r <- MaybeT $ reciprocal b
+          guard =<< confirmWith "Are you sure?"
+             ( dichotomous
+             $ "Also delete reciprocal branch "
+            <> showBranchId (branchId r)
+            <> "?"
+             )
+          Git.delete r
 
         where
+          reciprocal b' = do
+              branches <- ask
+              case b' of
+                (Local (remoteTrack -> Just rt )) -> do
+                    pure $ find ((rtIdentifier rt ==) . branchId) branches
 
-          deleteRemoteTrackOf :: LocalBranch -> m ()
-          deleteRemoteTrackOf b = void $ runMaybeT $ do
-              localRemote <- hoistMaybe $ do
-                  track <- remoteTrack b
-                  find ((G.rtIdentifier track ==) . branchId) branches
+                (RemoteTracking (branchId -> rbId)) -> do
+                    pure $ flip find branches $ \b'' -> fromMaybe False $ do
+                        rt <- asLocal b'' >>= remoteTrack
+                        pure $ rbId == rtIdentifier rt
 
-              Git.delete localRemote
-
-              T.putStrLn $ "Deleted remote tracking branch "
-                        <> showBranchId (branchId localRemote)
-                        <> "."
-
+                _ -> do
+                    pure Nothing
 
       _ -> throwError "not implemented"
 
@@ -158,15 +149,17 @@ decideAction b = do
     options :: [(Text, MaybeT m BranchAction)]
     options
         = catMaybes
-        $ [ ("switch", ) <$> Just (pure Switch)
+        $ [ ("switch", ) <$> Just (pure $ Switch b)
           , ("rename", ) <$> getRenameAction
           , ("delete", ) <$> getDeleteAction
           ]
 
     getRenameAction :: Maybe (MaybeT m BranchAction)
-    getRenameAction = Just $ do
-        T.putStr $ branchName b <> " -> "
-        Rename <$> getLine
+    getRenameAction = do
+        localB <- asLocal b
+        pure $ do
+            T.putStr $ branchName b <> " -> "
+            Rename localB <$> getLine
 
 
     getDeleteAction :: Maybe (MaybeT m BranchAction)
@@ -175,19 +168,5 @@ decideAction b = do
         Just $ fmap Delete $ do
             T.putStrLn $ "Delete " <> displayName b <> "?"
             guard =<< dichotomous "Are you sure?"
-            case b of
-                Local (LocalBranch _ _ (Just track))
-                  -> do
-                      includingRemote <-
-                          confirmWith "Are you sure?"
-                              $ dichotomous
-                              $  "Also delete remote tracking branch "
-                              <> showBranchId (G.rtIdentifier track)
-                              <> "?"
-
-                      pure $ if includingRemote
-                                then DeleteIncludingTracking
-                                else DeleteLocal
-
-                _ -> pure DeleteLocal
+            pure b
 
