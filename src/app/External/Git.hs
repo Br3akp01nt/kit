@@ -28,6 +28,7 @@ module External.Git
     , branchId
     , branchName
     , onSomeBranch
+    , withSomeBranch
     , remoteTrack
     )
     where
@@ -43,6 +44,9 @@ data SomeBranch where
 
 onSomeBranch :: (forall k. Branch k -> a) -> SomeBranch -> a
 onSomeBranch f (SomeBranch b) = f b
+
+withSomeBranch :: SomeBranch -> (forall k. Branch k -> a) -> a
+withSomeBranch (SomeBranch b) f = f b
 
 data BranchKind = Local | RemoteTracking
 

@@ -65,19 +65,11 @@ branch opts = void $ runMaybeT $ do
 
     chosenBranch <- choose (G.onSomeBranch listItemBranch) branchChoices
 
-    G.onSomeBranch (run branches) chosenBranch 
+    G.withSomeBranch chosenBranch $ \cb -> do
+        chosenAction <- decideAction cb
+
+        runReaderT (executeAction chosenAction) branches
   where
-
-    run :: forall (k :: G.BranchKind) m
-         . (MonadIO m, MonadCatch m, MonadError Text m, MonadFail m)
-        => [G.SomeBranch]
-        -> Branch k
-        -> MaybeT m ()
-    run branches cb = do
-      chosenAction <- decideAction cb
-
-      runReaderT (executeAction chosenAction) branches
-
 
     listItemBranch :: Branch k -> Text
     listItemBranch l@(LocalBranch a _ r)
