@@ -1,3 +1,6 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
+
 module External.Git.Parsec (branch, restOfLine) where
 
 import           Data.Char    (isSeparator)
@@ -12,12 +15,12 @@ type GitParser a = P.Parsec Text () a
 
 data TrackInfo = Gone | Divergence G.Divergence
 
-branch :: GitParser G.Branch
-branch = P.choice $ P.try <$> [ G.RemoteTracking <$> remoteBranch <?> "remote branch"
-                              , G.Local  <$> localBranch  <?> "local branch"
+branch :: GitParser G.SomeBranch
+branch = P.choice $ P.try <$> [ G.SomeBranch <$> remoteBranch <?> "remote branch"
+                              , G.SomeBranch <$> localBranch  <?> "local branch"
                               ]
   where
-    localBranch :: GitParser (G.LocalBranch)
+    localBranch :: GitParser (G.Branch 'G.Local)
     localBranch = do
         isActive <- fmap isJust $ P.optionMaybe $ P.char '*'
         spaces_
@@ -26,7 +29,7 @@ branch = P.choice $ P.try <$> [ G.RemoteTracking <$> remoteBranch <?> "remote br
         (_, r, _) <- branchDetails
         pure $ G.LocalBranch isActive n r
 
-    remoteBranch :: GitParser G.RemoteBranch
+    remoteBranch :: GitParser (G.Branch 'G.RemoteTracking)
     remoteBranch = do
         spaces_
         P.optional $ P.string "remotes/"

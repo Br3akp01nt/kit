@@ -8,6 +8,9 @@
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TupleSections            #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
 
 module Actions.Branch (branch, BranchOptions(..)) where
 
@@ -20,9 +23,10 @@ import           Data.List.Monoid          (intercalate)
 import qualified Data.Map                  as Map
 import qualified Data.Text.IO.Class        as T
 import           External.Git              (Branch (..), BranchName,
-                                            IsBranch (branchId, branchName),
-                                            LocalBranch (..), RemoteBranch (..),
-                                            asLocal, isLocal, showBranchId, RemoteTrack (..))
+                                            branchId, branchName,
+                                            BranchKind(..), remoteTrack,
+                                            asLocal, isLocal, showBranchId,
+                                            RemoteTrack (..))
 import           External.Git.Commands     (RemoteInclusion (WithRemotes))
 import qualified External.Git.Commands     as Git
 import qualified External.Git              as G
@@ -37,16 +41,16 @@ data BranchOptions = BranchOptions
     }
 
 
-data BranchAction
-    = Switch Branch
-    | Rename LocalBranch BranchName
-    | Delete Branch
+data BranchAction k
+    = Switch (Branch k)
+    | Rename (Branch 'Local) BranchName
+    | Delete (Branch k)
 
 
-displayName :: Branch -> Text
-displayName (Local l) =
+displayName :: Branch k -> Text
+displayName l@(LocalBranch {}) =
     branchName l
-displayName (RemoteTracking b@(RemoteBranch _ r)) =
+displayName b@(RemoteBranch _ r) =
     intercalate "/" [r, branchName b]
 
 
@@ -59,50 +63,58 @@ branch opts = void $ runMaybeT $ do
 
     branchChoices <- hoistMaybe $ nonEmpty $ filterBranches branches
 
-    chosenBranch <- choose listItemBranch branchChoices
+    chosenBranch <- choose (G.onSomeBranch listItemBranch) branchChoices
 
-    chosenAction <- decideAction chosenBranch
-
-    runReaderT (executeAction chosenAction) branches
-
+    G.onSomeBranch (run branches) chosenBranch 
   where
 
-    listItemBranch :: Branch -> Text
-    listItemBranch l@(Local (LocalBranch a _ r))
+    run :: forall (k :: G.BranchKind) m
+         . (MonadIO m, MonadCatch m, MonadError Text m, MonadFail m)
+        => [G.SomeBranch]
+        -> Branch k
+        -> MaybeT m ()
+    run branches cb = do
+      chosenAction <- decideAction cb
+
+      runReaderT (executeAction chosenAction) branches
+
+
+    listItemBranch :: Branch k -> Text
+    listItemBranch l@(LocalBranch a _ r)
         =  bool "  " "* " a
         <> displayName l
         <> case r of
              Nothing  -> mempty
              Just (G.rtIdentifier -> rId) -> " (" <> showBranchId rId <> ")"
 
-    listItemBranch r@(RemoteTracking (RemoteBranch _ _)) = "  " <> displayName r
+    listItemBranch r@(RemoteBranch _ _) = "  " <> displayName r
 
 
-    filterBranches :: [Branch] -> [Branch]
+    filterBranches :: [G.SomeBranch] -> [G.SomeBranch]
     filterBranches xs = foldr filter xs filters
       where
         filters = catMaybes
-          [ (\p b -> p `match` displayName b)          <$> searchPattern opts
-          , (\  b -> includeRemotes opts || isLocal b) <$ Just ()
+          [ (\p b -> p `match` G.onSomeBranch displayName b)          <$> searchPattern opts
+          , (\  b -> includeRemotes opts || G.onSomeBranch isLocal b) <$ Just ()
           ]
 
 
 
-executeAction :: forall m
+executeAction :: forall m k
                . (MonadIO m, MonadError Text m)
-              => BranchAction
-              -> ReaderT [Branch] m ()
+              => BranchAction k
+              -> ReaderT [G.SomeBranch] m ()
 executeAction action =
     case action of
-      (Switch (Local targetBranch)) ->
+      (Switch targetBranch@(LocalBranch {})) ->
           Git.switch targetBranch
 
-      (Switch (RemoteTracking targetBranch)) -> do
+      (Switch targetBranch@(RemoteBranch {})) -> do
           branches <- ask
           Git.switchRemote targetBranch
             $ Map.fromList
             $ flip mapMaybe branches $ \b -> do
-                loc <- asLocal b
+                loc <- G.onSomeBranch asLocal b
                 track <- remoteTrack loc
                 pure (G.rtIdentifier track, loc)
 
@@ -118,16 +130,28 @@ executeAction action =
           Git.delete r
 
         where
+          reciprocal :: Branch k
+                     -> ReaderT [G.SomeBranch] m (Maybe (Branch (G.ReciprocalKind k)))
           reciprocal b' = do
               branches <- ask
               case b' of
-                (Local (remoteTrack -> Just rt )) -> do
-                    pure $ find ((rtIdentifier rt ==) . branchId) branches
+                lb@(LocalBranch {})
+                 | Just rt <- remoteTrack lb
+                  -> pure
+                   $ find
+                       ((rtIdentifier rt ==) . branchId)
+                       (mapMaybe (G.onSomeBranch G.asRemote) branches)
 
-                (RemoteTracking (branchId -> rbId)) -> do
-                    pure $ flip find branches $ \b'' -> fromMaybe False $ do
-                        rt <- asLocal b'' >>= remoteTrack
-                        pure $ rbId == rtIdentifier rt
+                rb@(RemoteBranch {})
+                 | rbId <- branchId rb
+                 -> let isMatch b'' = fromMaybe False $ do
+                          rt <- remoteTrack b''
+                          pure $ rbId == rtIdentifier rt
+                        localBranches =
+                          mapMaybe
+                            (G.onSomeBranch G.asLocal)
+                            branches
+                     in pure $ find isMatch localBranches
 
                 _ -> do
                     pure Nothing
@@ -136,17 +160,17 @@ executeAction action =
 
 
 
-decideAction :: forall m
+decideAction :: forall m k
               . (MonadIO m, MonadCatch m, MonadError Text m, MonadFail m)
-             => Branch
-             -> MaybeT m BranchAction
+             => Branch k
+             -> MaybeT m (BranchAction k)
 decideAction b = do
     availableOptions <- hoistMaybe $ nonEmpty options
     (_, chosenAct) <- choose fst availableOptions
     chosenAct
 
   where
-    options :: [(Text, MaybeT m BranchAction)]
+    options :: [(Text, MaybeT m (BranchAction k))]
     options
         = catMaybes
         $ [ ("switch", ) <$> Just (pure $ Switch b)
@@ -154,7 +178,7 @@ decideAction b = do
           , ("delete", ) <$> getDeleteAction
           ]
 
-    getRenameAction :: Maybe (MaybeT m BranchAction)
+    getRenameAction :: Maybe (MaybeT m (BranchAction k))
     getRenameAction = do
         localB <- asLocal b
         pure $ do
@@ -162,9 +186,9 @@ decideAction b = do
             Rename localB <$> getLine
 
 
-    getDeleteAction :: Maybe (MaybeT m BranchAction)
+    getDeleteAction :: Maybe (MaybeT m (BranchAction k))
     getDeleteAction = do
-        guard (maybe True (not . active) $ asLocal b)
+        guard (maybe True (not . G.active) $ asLocal b)
         Just $ fmap Delete $ do
             T.putStrLn $ "Delete " <> displayName b <> "?"
             guard =<< dichotomous "Are you sure?"

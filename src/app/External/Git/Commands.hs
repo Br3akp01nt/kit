@@ -2,6 +2,8 @@
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module External.Git.Commands
     ( switch
@@ -28,9 +30,8 @@ import           Data.Map                  ((!?))
 import           Data.Text                 (unpack)
 import qualified Data.Text                 as T
 import qualified Data.Text.IO.Class        as T
-import           External.Git              (Branch (..),
-                                            IsBranch (branchId, branchName),
-                                            LocalBranch (..), RemoteBranch (..),
+import           External.Git              (Branch (..), BranchKind(..),
+                                            branchId, branchName,
                                             hasRemoteTrack, showBranchId)
 import           External.Git.Grep         (grep)
 import           External.Git.Internal     (git, output)
@@ -48,12 +49,12 @@ data RemoteInclusion
     | WithRemotes
 
 
-switch :: (MonadIO m, MonadError Text m) => LocalBranch -> m ()
+switch :: (MonadIO m, MonadError Text m) => Branch 'Local -> m ()
 switch (LocalBranch _ n _) = void $ git "switch" [T.unpack n] & output
 
 switchRemote :: (MonadIO m, MonadError Text m)
-             => RemoteBranch
-             -> Map G.BranchId LocalBranch
+             => Branch 'RemoteTracking
+             -> Map G.BranchId (Branch 'Local)
              -> m ()
 switchRemote r locals = do
     case locals !? branchId r of
@@ -63,11 +64,11 @@ switchRemote r locals = do
 
       Just b  -> switch b
 
-delete :: (MonadIO m, MonadError Text m) => Branch -> m ()
-delete (Local (LocalBranch _ n _)) = output cmd >>= T.putStrLn
+delete :: (MonadIO m, MonadError Text m) => Branch k -> m ()
+delete (LocalBranch _ n _) = output cmd >>= T.putStrLn
   where
     cmd = git "branch" ["-d", T.unpack n]
-delete (RemoteTracking (RemoteBranch n r))
+delete (RemoteBranch n r)
     = output cmd >>= T.putStrLn
   where
     cmd = git "push" [T.unpack r, "--delete", T.unpack n]
@@ -88,19 +89,19 @@ push = void $ git "push" [] & output
 commit :: (MonadIO m, MonadError Text m) => Text -> m ()
 commit msg = void $ git "commit" ["-m", unpack msg] & output
 
-currentBranch :: (MonadIO m, MonadError Text m) => m Branch
+currentBranch :: (MonadIO m, MonadError Text m) => m G.SomeBranch
 currentBranch = do
     branchRes <- git "branch" ["--show-current"] & output
     modifyError show $ P.runParserError GP.branch () "" branchRes
 
-createBranch :: (MonadIO m, MonadError Text m) => Text -> m LocalBranch
+createBranch :: (MonadIO m, MonadError Text m) => Text -> m (Branch 'Local)
 createBranch name = do
     void $ git "branch" [unpack name] & output
     pure $ LocalBranch False name Nothing
 
 list :: (MonadIO m, MonadError Text m, MonadLog Text m)
      => RemoteInclusion
-     -> m [Branch]
+     -> m [G.SomeBranch]
 list includeRemotes = do
     gitResults <- output $
         git "branch" $
@@ -123,7 +124,7 @@ list includeRemotes = do
       Left err       -> throwError $ show err
       Right branches -> pure $ catMaybes branches
 
-update :: (MonadIO m, MonadError Text m) => LocalBranch -> m ()
+update :: (MonadIO m, MonadError Text m) => Branch 'Local -> m ()
 update branch = do
     validate (hasRemoteTrack branch) $  branchName branch
                                      <> " has no remote track"

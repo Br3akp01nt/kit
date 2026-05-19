@@ -5,7 +5,6 @@
 module Actions.Shove where
 import           Control.Monad.Error.Class (MonadError)
 import qualified Data.Text.IO.Class        as T
-import           External.Git              (IsBranch (branchName))
 import           External.Git.Commands     (add, commit, currentBranch, push)
 import           Text.Regex.PCRE           ((=~~))
 import qualified Text.Regex.PCRE.Text      ()
@@ -13,6 +12,7 @@ import Data.Function.Suffix ((£))
 import Domain.Commit.Specification (CommitSpec, CommitType, renderMsg, CommitFlag)
 import qualified Domain.Commit.Specification as S
 import Data.Text (toUpper)
+import qualified External.Git as G
 
 data ShoveOptions = ShoveOptions
     { specification :: CommitOptions
@@ -34,7 +34,7 @@ shove opts = do
   where
     collectPrefix :: m (Maybe Text)
     collectPrefix = do
-        n <- branchName <$> currentBranch
+        n <- G.onSomeBranch G.branchName <$> currentBranch
         pure $ toUpper <$> n =~~ ("\\w+-\\d+" :: Text)
 
     getDesc :: m Text

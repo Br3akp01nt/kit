@@ -1,23 +1,34 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE GADTs               #-}
+{-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE KindSignatures      #-}
+{-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module External.Git
-    ( IsBranch(..)
-    , Remote
+    ( Remote
     , CommitHash
     , BranchName
     , Branch(..)
-    , LocalBranch(..)
-    , RemoteBranch(..)
+    , BranchKind(..)
     , BranchId
     , RemoteTrack(..)
     , Divergence(..)
+    , SomeBranch(..)
+    , ReciprocalKind
     , hasRemoteTrack
     , showBranchId
     , isLocal
     , isRemote
     , asLocal
     , asRemote
+    , active
+    , localName
+    , branchId
+    , branchName
+    , onSomeBranch
+    , remoteTrack
     )
     where
 
@@ -27,35 +38,56 @@ type BranchName = Text
 
 type CommitHash = Text
 
-class IsBranch a where
-    branchId   :: a -> BranchId
-    branchName :: a -> BranchName
+data SomeBranch where
+  SomeBranch :: Branch k -> SomeBranch
 
-data Branch = Local LocalBranch
-            | RemoteTracking RemoteBranch
-    deriving (Show)
+onSomeBranch :: (forall k. Branch k -> a) -> SomeBranch -> a
+onSomeBranch f (SomeBranch b) = f b
 
-asLocal :: Branch -> Maybe LocalBranch
-asLocal (Local b) = Just b
-asLocal _         = Nothing
+data BranchKind = Local | RemoteTracking
 
-asRemote :: Branch -> Maybe RemoteBranch
-asRemote (RemoteTracking b) = Just b
-asRemote _          = Nothing
+type family ReciprocalKind (k :: BranchKind) where
+    ReciprocalKind 'Local = 'RemoteTracking
+    ReciprocalKind 'RemoteTracking = 'Local
 
-isRemote :: Branch -> Bool
-isRemote (Local  _) = False
-isRemote (RemoteTracking _) = True
+data Branch (k :: BranchKind) where
+    LocalBranch  :: Bool -> BranchName -> Maybe RemoteTrack -> Branch Local
+    RemoteBranch :: BranchName -> Remote -> Branch RemoteTracking
 
-isLocal :: Branch -> Bool
+branchId   :: Branch k -> BranchId
+branchId (LocalBranch _ n rt) = (rt >>= fst . rtIdentifier, n)
+branchId (RemoteBranch n r) = (Just r, n)
+
+branchName :: Branch k -> BranchName
+branchName (LocalBranch _ n _) = n
+branchName (RemoteBranch n _) = n
+
+active :: Branch 'Local -> Bool
+active (LocalBranch a _ _) = a
+
+localName :: Branch 'Local -> BranchName
+localName (LocalBranch _ n _) = n
+
+remoteTrack :: Branch 'Local -> Maybe RemoteTrack
+remoteTrack (LocalBranch _ _ r) = r
+
+hasRemoteTrack :: Branch 'Local -> Bool
+hasRemoteTrack = isJust . remoteTrack
+
+asLocal :: Branch k -> Maybe (Branch 'Local)
+asLocal b@(LocalBranch {}) = Just b
+asLocal _                  = Nothing
+
+asRemote :: Branch k -> Maybe (Branch 'RemoteTracking)
+asRemote b@(RemoteBranch {}) = Just b
+asRemote _                   = Nothing
+
+isRemote :: Branch k -> Bool
+isRemote (LocalBranch {}) = False
+isRemote (RemoteBranch {}) = True
+
+isLocal :: Branch k -> Bool
 isLocal = not . isRemote
-
-instance IsBranch Branch where
-    branchName (Local l)  = branchName l
-    branchName (RemoteTracking r) = branchName r
-    branchId (Local l)  = branchId l
-    branchId (RemoteTracking r) = branchId r
-
 
 data RemoteTrack = RemoteTrack
     { rtIdentifier :: BranchId
@@ -66,29 +98,6 @@ data Divergence = Divergence
     { ahead :: Int
     , behind :: Int
     } deriving Show
-
-data LocalBranch = LocalBranch
-    { active      :: Bool
-    , localName   :: BranchName
-    , remoteTrack :: Maybe RemoteTrack
-    } deriving (Show)
-
-hasRemoteTrack :: LocalBranch -> Bool
-hasRemoteTrack = isJust . remoteTrack
-
-instance IsBranch LocalBranch where
-    branchName = localName
-    branchId l = (Nothing, l.localName)
-
-
-data RemoteBranch = RemoteBranch
-    { remoteBranchName :: BranchName
-    , remote           :: Remote
-    } deriving (Show)
-
-instance IsBranch RemoteBranch where
-    branchName = remoteBranchName
-    branchId r = (Just r.remote, r.remoteBranchName)
 
 type BranchId = (Maybe Remote, BranchName)
 

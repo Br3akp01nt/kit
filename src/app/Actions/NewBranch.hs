@@ -2,6 +2,7 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DataKinds #-}
 
 module Actions.NewBranch (newBranch, NewBranchOptions(..)) where
 
@@ -49,7 +50,7 @@ newBranch _ = do
     getName :: m Text
     getName = putStr "Branch name: " *> getLine
 
-    createBranch :: Maybe Text -> Text -> m Git.LocalBranch
+    createBranch :: Maybe Text -> Text -> m (Git.Branch 'Git.Local)
     createBranch issue name = do
         let branchName = intercalate "_" parts
         T.putStrLn $ "Creating branch: " <> branchName
