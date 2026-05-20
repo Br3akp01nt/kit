@@ -111,17 +111,35 @@ executeAction action =
                 pure (G.rtIdentifier track, loc)
 
       (Delete b) -> void $ runMaybeT $ do
-          Git.delete b
-          r <- MaybeT $ reciprocal b
-          guard =<< confirmWith "Are you sure?"
+          case b of
+            b'@(LocalBranch {}) -> do
+              deleteLocal b'
+              r <- MaybeT $ reciprocal b
+              guard =<< confirmReciprocalDelete r
+              Git.delete Git.Lenient r
+
+            b'@(RemoteBranch {}) -> do
+              Git.delete Git.Lenient b'
+              r <- MaybeT $ reciprocal b
+              guard =<< confirmReciprocalDelete r
+              deleteLocal r
+
+        where
+          confirmReciprocalDelete r = confirmWith "Are you sure?"
              ( dichotomous
              $ "Also delete reciprocal branch "
             <> showBranchId (branchId r)
             <> "?"
              )
-          Git.delete r
 
-        where
+          deleteLocal b' = do
+              Git.delete Git.Lenient b' >>= \case
+                Left Git.NotFullyMerged -> do
+                  guard =<< dichotomous
+                    "Branch is not fully merged. Delete anyway?"
+                  Git.delete Git.Force b'
+                Right () -> pure ()
+
           reciprocal :: Branch k
                      -> ReaderT [G.SomeBranch] m (Maybe (Branch (G.ReciprocalKind k)))
           reciprocal b' = do

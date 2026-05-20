@@ -7,6 +7,7 @@ module External.Git.Internal
     ( GitCommand
     , git
     , output
+    , outputCatch
     , handleJustWith
     )
     where
@@ -42,6 +43,19 @@ output cmd = do
     res <- runGitCommand cmd
     case res of
       (ExitSuccess, out, _)      -> pure out
+      (ExitFailure code, _, err) -> defaultErrorHandler code err cmd.cmdName
+
+outputCatch :: (MonadError Text m, MonadIO m)
+            => GitCommand m a
+            -> (Int -> Text -> Maybe (m a))
+            -> m a
+outputCatch cmd c = do
+    res <- runGitCommand cmd
+    case res of
+      (ExitSuccess, out, _)      -> pure out
+      (ExitFailure code, _, err)
+       | Just cr <- c code err
+        -> cr
       (ExitFailure code, _, err) -> defaultErrorHandler code err cmd.cmdName
 
 

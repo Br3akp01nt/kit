@@ -4,6 +4,8 @@
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module External.Git.Commands
     ( switch
@@ -19,6 +21,8 @@ module External.Git.Commands
     , grep
     , update
     , RemoteInclusion(..)
+    , Assertiveness(..)
+    , DeletionError(..)
     )
     where
 
@@ -27,14 +31,14 @@ import           Control.Monad.Error.Class (MonadError (throwError),
                                             modifyError)
 import           Control.Monad.Log.Class   (MonadLog (writeLog))
 import           Data.Map                  ((!?))
-import           Data.Text                 (unpack)
+import           Data.Text                 (unpack, isInfixOf)
 import qualified Data.Text                 as T
 import qualified Data.Text.IO.Class        as T
 import           External.Git              (Branch (..), BranchKind(..),
                                             branchId, branchName,
                                             hasRemoteTrack, showBranchId)
 import           External.Git.Grep         (grep)
-import           External.Git.Internal     (git, output)
+import           External.Git.Internal     (git, output, outputCatch)
 import qualified External.Git.Parsec       as GP (branch, restOfLine)
 import           System.OsPath             (encodeUtf, takeBaseName)
 import           System.OsPath.Text        (osPathToText)
@@ -48,6 +52,16 @@ data RemoteInclusion
     = NoRemotes
     | WithRemotes
 
+data Assertiveness (l :: Bool) where
+    Force   :: Assertiveness 'True
+    Lenient :: Assertiveness 'False
+
+data DeletionError = NotFullyMerged
+
+type family DeletionResult (k :: BranchKind) (l :: Bool) where    
+  DeletionResult 'RemoteTracking a = ()
+  DeletionResult 'Local 'True = ()
+  DeletionResult 'Local 'False = Either DeletionError ()
 
 switch :: (MonadIO m, MonadError Text m) => Branch 'Local -> m ()
 switch (LocalBranch _ n _) = void $ git "switch" [T.unpack n] & output
@@ -64,11 +78,32 @@ switchRemote r locals = do
 
       Just b  -> switch b
 
-delete :: (MonadIO m, MonadError Text m) => Branch k -> m ()
-delete (LocalBranch _ n _) = output cmd >>= T.putStrLn
+delete :: (MonadIO m, MonadError Text m)
+       => Assertiveness l
+       -> Branch k
+       -> m (DeletionResult k l)
+delete a (LocalBranch _ n _) =
+    case a of
+      Force -> output cmd >>= T.putStrLn
+      Lenient -> do
+        out <- outputCatch
+          (Right <$> cmd)
+          (ctch $ Left NotFullyMerged)
+        case out of
+          Left e -> pure $ Left e
+          Right t -> Right <$> T.putStrLn t
   where
-    cmd = git "branch" ["-d", T.unpack n]
-delete (RemoteBranch n r)
+    cmd = git "branch" [d, T.unpack n]
+      where
+        d = case a of
+              Force -> "-D"
+              Lenient -> "-d"
+
+    ctch :: Monad m => a -> Int -> Text -> Maybe (m a)
+    ctch r 1 (("not fully merged" `isInfixOf`) -> True) = Just $ pure r
+    ctch _ _ _ = Nothing
+
+delete _ (RemoteBranch n r)
     = output cmd >>= T.putStrLn
   where
     cmd = git "push" [T.unpack r, "--delete", T.unpack n]
